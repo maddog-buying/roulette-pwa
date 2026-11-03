@@ -48,9 +48,9 @@
         </div>
 
         <div class="field">
-          <span>排除號碼 <small>（可輸入 7、7,13,21 或範圍 30-35）</small></span>
+          <span>排除號碼 <small>（可輸入 7、7,13,21、空格分隔或範圍 30-35）</small></span>
           <div class="add-row">
-            <input id="excludeInput" type="text" inputmode="numeric" placeholder="例：4, 13, 40-44">
+            <input id="excludeInput" type="text" inputmode="text" enterkeyhint="done" autocomplete="off" placeholder="例：4, 13, 40-44">
             <button id="addExclude" class="btn">新增</button>
           </div>
           <div id="chips" class="chips"></div>

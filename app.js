@@ -270,6 +270,8 @@ function showResult(nums) {
 
 function parseExcludes(text) {
   const out = [];
+  // 全形數字轉半形（中文鍵盤常見）
+  text = text.replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xfee0));
   const tokens = text.split(/[,，、;；\s]+/).filter(Boolean);
   for (const tok of tokens) {
     const m = tok.match(/^(\d+)\s*[-~～－]\s*(\d+)$/);

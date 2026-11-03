@@ -1,6 +1,6 @@
 // 離線快取：改版時把版本號 +1，舊快取會自動清掉
 // 與瘋狗貨態共用網域，只能清理 roulette- 開頭的快取
-const CACHE = 'roulette-v2';
+const CACHE = 'roulette-v3';
 const ASSETS = [
   './',
   'index.html',
