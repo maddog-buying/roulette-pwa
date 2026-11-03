@@ -29,6 +29,10 @@
         <canvas id="wheel" width="800" height="800" aria-label="抽獎輪盤"></canvas>
         <button id="spinBtn" class="hub" aria-label="開始抽獎">開始</button>
       </div>
+      <div class="tape-wrap">
+        <canvas id="tape" aria-label="指針位置放大檢視"></canvas>
+        <div class="tape-marker" aria-hidden="true"></div>
+      </div>
       <div class="status" id="status">設定好參數後按「開始」</div>
       <div class="current" id="current" aria-live="polite"></div>
     </section>
@@ -72,6 +76,10 @@
         </label>
 
         <div class="pool-info" id="poolInfo"></div>
+        <details class="pool-list">
+          <summary id="poolListTitle">查看輪盤上的全部號碼</summary>
+          <div id="poolList" class="pool-nums"></div>
+        </details>
       </div>
 
       <div class="card">

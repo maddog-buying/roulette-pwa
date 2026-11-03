@@ -57,13 +57,67 @@ let rotation = 0;
 let highlight = -1;
 let size = 0;
 
+const tape = $('tape');
+const tctx = tape.getContext('2d');
+let tapeW = 0, tapeH = 0;
+
 function resizeCanvas() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
   size = canvas.clientWidth;
   canvas.width = Math.round(size * dpr);
   canvas.height = Math.round(size * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  tapeW = tape.clientWidth;
+  tapeH = tape.clientHeight;
+  tape.width = Math.round(tapeW * dpr);
+  tape.height = Math.round(tapeH * dpr);
+  tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawWheel();
+}
+
+// 放大條：把指針附近的扇形攤平成一列，和輪盤同步轉動
+function drawTape() {
+  if (!tapeW) return;
+  tctx.clearRect(0, 0, tapeW, tapeH);
+  const n = wheelNums.length;
+  if (n === 0) return;
+
+  const s = TAU / n;
+  const p = ((((-rotation) % TAU) + TAU) % TAU) / s; // 指針所在的連續扇形位置
+  const W = 64;
+  const cx = tapeW / 2;
+  const half = Math.ceil(tapeW / W / 2) + 1;
+  const base = Math.floor(p);
+
+  tctx.textAlign = 'center';
+  tctx.textBaseline = 'middle';
+  tctx.font = `800 ${tapeH * 0.42}px system-ui, sans-serif`;
+  for (let j = base - half; j <= base + half; j++) {
+    const i = ((j % n) + n) % n;
+    const x = cx - W / 2 + (j - p + 0.5) * W;
+    tctx.fillStyle = i === highlight ? '#ffffff' : segColor(i, n);
+    tctx.beginPath();
+    tctx.roundRect(x + 2, 6, W - 4, tapeH - 12, 8);
+    tctx.fill();
+    if (i !== highlight) {
+      // 深色描邊，讓白字在黃綠色格子上也看得清楚
+      tctx.lineWidth = 4;
+      tctx.lineJoin = 'round';
+      tctx.strokeStyle = 'rgba(0,0,0,.45)';
+      tctx.strokeText(String(wheelNums[i]), x + W / 2, tapeH / 2 + 1);
+    }
+    tctx.fillStyle = i === highlight ? '#d6336c' : '#fff';
+    tctx.fillText(String(wheelNums[i]), x + W / 2, tapeH / 2 + 1);
+  }
+
+  // 兩側淡出
+  const fade = Math.min(80, tapeW * 0.2);
+  const gl = tctx.createLinearGradient(0, 0, fade, 0);
+  gl.addColorStop(0, 'rgba(20,17,43,.95)'); gl.addColorStop(1, 'rgba(20,17,43,0)');
+  tctx.fillStyle = gl; tctx.fillRect(0, 0, fade, tapeH);
+  const gr = tctx.createLinearGradient(tapeW - fade, 0, tapeW, 0);
+  gr.addColorStop(0, 'rgba(20,17,43,0)'); gr.addColorStop(1, 'rgba(20,17,43,.95)');
+  tctx.fillStyle = gr; tctx.fillRect(tapeW - fade, 0, fade, tapeH);
 }
 
 function segColor(i, n) {
@@ -77,6 +131,7 @@ function drawWheel() {
   const c = size / 2;
   const R = c - 2;
   ctx.clearRect(0, 0, size, size);
+  drawTape();
 
   const n = wheelNums.length;
   if (n === 0) {
@@ -335,6 +390,13 @@ function renderPoolInfo() {
   }
   info.innerHTML = html;
   info.classList.toggle('error', bad);
+
+  $('poolListTitle').textContent = `查看輪盤上的全部 ${pool.length} 個號碼`;
+  const list = $('poolList');
+  list.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  pool.forEach((n) => { const s = document.createElement('span'); s.textContent = n; frag.appendChild(s); });
+  list.appendChild(frag);
   $('spinBtn').disabled = bad || spinning;
 }
 
