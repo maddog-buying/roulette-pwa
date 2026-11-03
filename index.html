@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14112b">
+  <meta name="description" content="輪盤抽獎：設定總號碼數、排除號碼與每次抽出數量">
+  <title>輪盤抽獎</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>🎡 輪盤抽獎</h1>
+    <div class="topbar-actions">
+      <button id="soundBtn" class="icon-btn" title="音效開關" aria-label="音效開關">🔊</button>
+      <button id="installBtn" class="icon-btn hidden" title="安裝到裝置">⬇ 安裝</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="wheel-area">
+      <div class="wheel-wrap">
+        <div class="pointer" aria-hidden="true"></div>
+        <canvas id="wheel" width="800" height="800" aria-label="抽獎輪盤"></canvas>
+        <button id="spinBtn" class="hub" aria-label="開始抽獎">開始</button>
+      </div>
+      <div class="status" id="status">設定好參數後按「開始」</div>
+      <div class="current" id="current" aria-live="polite"></div>
+    </section>
+
+    <section class="panel">
+      <div class="card">
+        <h2>抽獎設定</h2>
+        <div class="row2">
+          <label class="field">
+            <span>總抽獎數（1 ~ N）</span>
+            <input id="total" type="number" inputmode="numeric" min="1" max="9999" value="50">
+          </label>
+          <label class="field">
+            <span>一次抽出幾個</span>
+            <input id="count" type="number" inputmode="numeric" min="1" max="999" value="3">
+          </label>
+        </div>
+
+        <div class="field">
+          <span>排除號碼 <small>（可輸入 7、7,13,21 或範圍 30-35）</small></span>
+          <div class="add-row">
+            <input id="excludeInput" type="text" inputmode="numeric" placeholder="例：4, 13, 40-44">
+            <button id="addExclude" class="btn">新增</button>
+          </div>
+          <div id="chips" class="chips"></div>
+          <button id="clearExclude" class="link-btn hidden">清除全部排除</button>
+        </div>
+
+        <label class="toggle">
+          <input id="noRepeat" type="checkbox" checked>
+          <span>已抽中的號碼不再重複抽出（跨回合）</span>
+        </label>
+
+        <label class="field">
+          <span>轉速</span>
+          <select id="speed">
+            <option value="slow">慢（戲劇化）</option>
+            <option value="normal" selected>一般</option>
+            <option value="fast">快</option>
+          </select>
+        </label>
+
+        <div class="pool-info" id="poolInfo"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>抽獎紀錄</h2>
+          <button id="resetBtn" class="link-btn">重置紀錄</button>
+        </div>
+        <ol id="history" class="history"></ol>
+        <p id="historyEmpty" class="muted">尚無紀錄</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="resultModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="resultTitle">
+    <div class="modal-card">
+      <h3 id="resultTitle">🎉 抽獎結果</h3>
+      <div id="resultBalls" class="balls"></div>
+      <button id="closeModal" class="btn primary">確定</button>
+    </div>
+  </div>
+  <canvas id="confetti" class="confetti"></canvas>
+
+  <script src="app.js"></script>
+</body>
+</html>
