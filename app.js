@@ -56,7 +56,12 @@ let wheelNums = [];
 let rotation = 0;
 let highlight = -1;
 let size = 0;
+let animating = false;
 
+// 放大條格子尺寸，需與 style.css 的 .tape-marker（寬 66 = 60 + 邊框 3×2、上下 3）一致
+const TAPE_CELL = 64;
+const TAPE_GAP = 2;
+const TAPE_PAD = 6;
 const tape = $('tape');
 const tctx = tape.getContext('2d');
 let tapeW = 0, tapeH = 0;
@@ -83,8 +88,10 @@ function drawTape() {
   if (n === 0) return;
 
   const s = TAU / n;
-  const p = ((((-rotation) % TAU) + TAU) % TAU) / s; // 指針所在的連續扇形位置
-  const W = 64;
+  let p = ((((-rotation) % TAU) + TAU) % TAU) / s; // 指針所在的連續扇形位置
+  // 靜止時（含移除號碼後輪盤重新分格）讓格子置中對齊中獎框
+  if (!animating) p = Math.floor(p) + 0.5;
+  const W = TAPE_CELL;
   const cx = tapeW / 2;
   const half = Math.ceil(tapeW / W / 2) + 1;
   const base = Math.floor(p);
@@ -97,7 +104,7 @@ function drawTape() {
     const x = cx - W / 2 + (j - p + 0.5) * W;
     tctx.fillStyle = i === highlight ? '#ffffff' : segColor(i, n);
     tctx.beginPath();
-    tctx.roundRect(x + 2, 6, W - 4, tapeH - 12, 8);
+    tctx.roundRect(x + TAPE_GAP, TAPE_PAD, W - TAPE_GAP * 2, tapeH - TAPE_PAD * 2, 8);
     tctx.fill();
     if (i !== highlight) {
       // 深色描邊，讓白字在黃綠色格子上也看得清楚
@@ -188,6 +195,13 @@ function drawWheel() {
   ctx.fill();
 }
 
+// 號碼增減後扇形會重新分格，把指針對回某一格的正中央，避免停在分隔線上
+function snapRotation() {
+  const n = wheelNums.length;
+  if (!n) return;
+  rotation = -(indexAtPointer() + 0.5) * (TAU / n);
+}
+
 function indexAtPointer() {
   const n = wheelNums.length;
   const s = TAU / n;
@@ -224,15 +238,15 @@ function spinTo(index, duration, turns) {
   return new Promise((resolve) => {
     const n = wheelNums.length;
     const s = TAU / n;
-    // 停在扇形內隨機位置（避開邊界），讓每次停點都不同
-    const jitter = (randInt(1000) / 1000 - 0.5) * 0.7;
-    const desired = (((-(index + 0.5 + jitter) * s) % TAU) + TAU) % TAU;
+    // 停在扇形正中央，放大條的格子才會剛好對齊中獎框
+    const desired = (((-(index + 0.5) * s) % TAU) + TAU) % TAU;
     const start = rotation;
     const cur = ((start % TAU) + TAU) % TAU;
     const delta = ((desired - cur) % TAU + TAU) % TAU;
     const target = start + delta + turns * TAU;
     const t0 = performance.now();
     let lastIdx = indexAtPointer();
+    animating = true;
 
     function frame(now) {
       const t = Math.min(1, (now - t0) / duration);
@@ -244,7 +258,7 @@ function spinTo(index, duration, turns) {
         if (now - lastTick > 35) { tick(); lastTick = now; }
       }
       if (t < 1) requestAnimationFrame(frame);
-      else resolve();
+      else { animating = false; drawWheel(); resolve(); }
     }
     requestAnimationFrame(frame);
   });
@@ -286,6 +300,7 @@ async function startDraw() {
 
     highlight = -1;
     wheelNums.splice(idx, 1);
+    snapRotation();
     drawWheel();
   }
 
@@ -430,6 +445,7 @@ function readInputs() {
 function refresh() {
   if (!spinning) {
     wheelNums = basePool();
+    snapRotation();
     drawWheel();
   }
   renderChips();

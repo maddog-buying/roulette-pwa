@@ -82,8 +82,9 @@ button, input, select { font: inherit; color: inherit; }
 }
 #tape { width: 100%; height: 100%; display: block; }
 .tape-marker {
-  position: absolute; left: 50%; top: 0; bottom: 0; width: 64px; transform: translateX(-50%);
-  border: 3px solid var(--accent2); border-radius: 10px; pointer-events: none;
+  /* 框內側剛好包住一格：格寬 60、上下留 6（見 app.js TAPE_*） */
+  position: absolute; left: 50%; top: 3px; bottom: 3px; width: 66px; transform: translateX(-50%);
+  border: 3px solid var(--accent2); border-radius: 11px; pointer-events: none;
   box-shadow: 0 0 12px rgba(255, 92, 138, .6);
 }
 .tape-marker::before {
