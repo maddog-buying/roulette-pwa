@@ -39,7 +39,24 @@
 
     <section class="panel">
       <div class="card">
-        <h2>抽獎設定</h2>
+        <div class="seg" role="tablist" aria-label="抽獎模式">
+          <button id="modeNumber" role="tab" data-mode="number">🔢 號碼抽獎</button>
+          <button id="modePrize" role="tab" data-mode="prize">🎁 獎品排序</button>
+        </div>
+
+        <div id="prizeSettings" class="hidden">
+          <div class="field">
+            <span>獎品名稱 <small>（可一次貼上多行，每行一個）</small></span>
+            <div class="add-row">
+              <input id="prizeInput" type="text" enterkeyhint="done" autocomplete="off" maxlength="40" placeholder="例：頭獎 iPad">
+              <button id="addPrize" class="btn">新增</button>
+            </div>
+          </div>
+          <ol id="prizeList" class="prize-list"></ol>
+          <button id="clearPrizes" class="link-btn hidden">清除全部獎品</button>
+        </div>
+
+        <div id="numberSettings">
         <div class="row2">
           <label class="field">
             <span>總抽獎數（1 ~ N）</span>
@@ -65,6 +82,7 @@
           <input id="noRepeat" type="checkbox" checked>
           <span>已抽中的號碼不再重複抽出（跨回合）</span>
         </label>
+        </div>
 
         <label class="field">
           <span>轉速</span>
@@ -76,7 +94,7 @@
         </label>
 
         <div class="pool-info" id="poolInfo"></div>
-        <details class="pool-list">
+        <details id="poolDetails" class="pool-list">
           <summary id="poolListTitle">查看輪盤上的全部號碼</summary>
           <div id="poolList" class="pool-nums"></div>
         </details>

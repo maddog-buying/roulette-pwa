@@ -19,8 +19,12 @@ const state = {
   noRepeat: true,
   speed: 'normal',
   sound: true,
-  history: [],      // { time, nums: [] }
+  mode: 'number',   // 'number' 號碼抽獎 | 'prize' 獎品排序
+  prizes: [],       // 獎品名稱（可重複）
+  history: [],      // { time, nums: [], mode }
 };
+
+const isPrize = () => state.mode === 'prize';
 
 function load() {
   try {
@@ -41,6 +45,9 @@ function basePool() {
   return pool;
 }
 
+// 目前模式下輪盤上的項目
+const currentPool = () => (isPrize() ? state.prizes.slice() : basePool());
+
 // 公平亂數（拒絕取樣，避免模數偏差）
 function randInt(n) {
   const max = Math.floor(0x100000000 / n) * n;
@@ -52,14 +59,15 @@ function randInt(n) {
 // ---------- Wheel drawing ----------
 const canvas = $('wheel');
 const ctx = canvas.getContext('2d');
-let wheelNums = [];
+let wheelItems = [];
 let rotation = 0;
 let highlight = -1;
 let size = 0;
 let animating = false;
 
-// 放大條格子尺寸，需與 style.css 的 .tape-marker（寬 66 = 60 + 邊框 3×2、上下 3）一致
-const TAPE_CELL = 64;
+// 放大條格子尺寸；中獎框寬度由 --cell 帶給 style.css 的 .tape-marker（格寬 + 2）
+// 獎品名稱較長，所以獎品模式的格子比較寬
+const tapeCell = () => (isPrize() ? 132 : 64);
 const TAPE_GAP = 2;
 const TAPE_PAD = 6;
 const tape = $('tape');
@@ -84,24 +92,25 @@ function resizeCanvas() {
 function drawTape() {
   if (!tapeW) return;
   tctx.clearRect(0, 0, tapeW, tapeH);
-  const n = wheelNums.length;
+  const n = wheelItems.length;
   if (n === 0) return;
 
   const s = TAU / n;
   let p = ((((-rotation) % TAU) + TAU) % TAU) / s; // 指針所在的連續扇形位置
   // 靜止時（含移除號碼後輪盤重新分格）讓格子置中對齊中獎框
   if (!animating) p = Math.floor(p) + 0.5;
-  const W = TAPE_CELL;
+  const W = tapeCell();
   const cx = tapeW / 2;
   const half = Math.ceil(tapeW / W / 2) + 1;
   const base = Math.floor(p);
 
   tctx.textAlign = 'center';
   tctx.textBaseline = 'middle';
-  tctx.font = `800 ${tapeH * 0.42}px system-ui, sans-serif`;
+  tctx.font = `800 ${isPrize() ? tapeH * 0.3 : tapeH * 0.42}px system-ui, sans-serif`;
   for (let j = base - half; j <= base + half; j++) {
     const i = ((j % n) + n) % n;
     const x = cx - W / 2 + (j - p + 0.5) * W;
+    const label = fitText(tctx, String(wheelItems[i]), W - 14);
     tctx.fillStyle = i === highlight ? '#ffffff' : segColor(i, n);
     tctx.beginPath();
     tctx.roundRect(x + TAPE_GAP, TAPE_PAD, W - TAPE_GAP * 2, tapeH - TAPE_PAD * 2, 8);
@@ -111,10 +120,10 @@ function drawTape() {
       tctx.lineWidth = 4;
       tctx.lineJoin = 'round';
       tctx.strokeStyle = 'rgba(0,0,0,.45)';
-      tctx.strokeText(String(wheelNums[i]), x + W / 2, tapeH / 2 + 1);
+      tctx.strokeText(label, x + W / 2, tapeH / 2 + 1);
     }
     tctx.fillStyle = i === highlight ? '#d6336c' : '#fff';
-    tctx.fillText(String(wheelNums[i]), x + W / 2, tapeH / 2 + 1);
+    tctx.fillText(label, x + W / 2, tapeH / 2 + 1);
   }
 
   // 兩側淡出
@@ -125,6 +134,14 @@ function drawTape() {
   const gr = tctx.createLinearGradient(tapeW - fade, 0, tapeW, 0);
   gr.addColorStop(0, 'rgba(20,17,43,0)'); gr.addColorStop(1, 'rgba(20,17,43,.95)');
   tctx.fillStyle = gr; tctx.fillRect(tapeW - fade, 0, fade, tapeH);
+}
+
+// 文字超過寬度時截斷加「…」
+function fitText(c, text, maxW) {
+  if (c.measureText(text).width <= maxW) return text;
+  let t = text;
+  while (t.length > 1 && c.measureText(t + '…').width > maxW) t = t.slice(0, -1);
+  return t + '…';
 }
 
 function segColor(i, n) {
@@ -140,14 +157,14 @@ function drawWheel() {
   ctx.clearRect(0, 0, size, size);
   drawTape();
 
-  const n = wheelNums.length;
+  const n = wheelItems.length;
   if (n === 0) {
     ctx.fillStyle = '#2d2560';
     ctx.beginPath(); ctx.arc(c, c, R, 0, TAU); ctx.fill();
     ctx.fillStyle = '#a9a3d1';
     ctx.font = `600 ${size * 0.045}px system-ui, sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('沒有可抽的號碼', c, c + size * 0.2);
+    ctx.fillText(isPrize() ? '請先新增獎品' : '沒有可抽的號碼', c, c + size * 0.2);
     return;
   }
 
@@ -155,7 +172,8 @@ function drawWheel() {
   const labelR = R * 0.82;
   // 依扇形寬度決定字級；太窄就不畫數字
   const arcLen = s * labelR;
-  const fontSize = Math.min(size * 0.06, arcLen * 0.75);
+  const fontSize = isPrize() ? Math.min(size * 0.045, arcLen * 0.6) : Math.min(size * 0.06, arcLen * 0.75);
+  const labelMaxW = R * 0.66; // 文字沿半徑方向，從邊緣往中心最多佔這麼長
   const showLabels = fontSize >= 7;
   const showLines = n <= 360;
 
@@ -183,7 +201,14 @@ function drawWheel() {
       ctx.fillStyle = i === highlight ? '#d6336c' : '#fff';
       ctx.shadowColor = 'rgba(0,0,0,.35)';
       ctx.shadowBlur = i === highlight ? 0 : 3;
-      ctx.fillText(String(wheelNums[i]), R - size * 0.03, 0);
+      const label = fitText(ctx, String(wheelItems[i]), labelMaxW);
+      if (i !== highlight) {
+        ctx.lineWidth = Math.max(2, fontSize * 0.18);
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = 'rgba(0,0,0,.4)';
+        ctx.strokeText(label, R - size * 0.03, 0);
+      }
+      ctx.fillText(label, R - size * 0.03, 0);
       ctx.restore();
     }
   }
@@ -211,13 +236,13 @@ function drawWheel() {
 
 // 號碼增減後扇形會重新分格，把指針對回某一格的正中央，避免停在分隔線上
 function snapRotation() {
-  const n = wheelNums.length;
+  const n = wheelItems.length;
   if (!n) return;
   rotation = -(indexAtPointer() + 0.5) * (TAU / n);
 }
 
 function indexAtPointer() {
-  const n = wheelNums.length;
+  const n = wheelItems.length;
   const s = TAU / n;
   const a = (((-rotation) % TAU) + TAU) % TAU;
   return Math.floor(a / s) % n;
@@ -227,7 +252,7 @@ function indexAtPointer() {
 const MAX_PEGS = 72;
 const pegCount = (n) => (n <= MAX_PEGS ? n : MAX_PEGS);
 function pegAtPointer() {
-  const pegs = pegCount(wheelNums.length);
+  const pegs = pegCount(wheelItems.length);
   const a = (((-rotation) % TAU) + TAU) % TAU;
   return Math.floor(a / (TAU / pegs)) % pegs;
 }
@@ -358,7 +383,7 @@ const easeOut = (t) => 1 - Math.pow(1 - t, 4);
 
 function spinTo(index, duration, turns) {
   return new Promise((resolve) => {
-    const n = wheelNums.length;
+    const n = wheelItems.length;
     const s = TAU / n;
     // 停在扇形正中央，放大條的格子才會剛好對齊中獎框
     const desired = (((-(index + 0.5) * s) % TAU) + TAU) % TAU;
@@ -396,49 +421,53 @@ let spinning = false;
 async function startDraw() {
   if (spinning) return;
   readInputs();
-  const pool = basePool();
-  const k = state.count;
-  if (pool.length < k || k < 1) { renderPoolInfo(); return; }
+  const prize = isPrize();
+  const pool = currentPool();
+  // 獎品模式：每個獎品都要轉出來，排出完整順序
+  const k = prize ? pool.length : state.count;
+  if (prize ? k < 2 : pool.length < k || k < 1) { renderPoolInfo(); return; }
 
   unlockAudio();
   spinning = true;
   setBusy(true);
   $('current').innerHTML = '';
-  wheelNums = pool.slice();
+  wheelItems = pool.slice();
   drawWheel();
 
   const cfg = SPEEDS[state.speed] || SPEEDS.normal;
   const results = [];
 
   for (let r = 0; r < k; r++) {
-    $('status').textContent = k > 1 ? `抽第 ${r + 1} / ${k} 個…` : '抽獎中…';
-    const idx = randInt(wheelNums.length);
+    $('status').textContent = prize
+      ? `排第 ${r + 1} / ${k} 順位…`
+      : k > 1 ? `抽第 ${r + 1} / ${k} 個…` : '抽獎中…';
+    const idx = randInt(wheelItems.length);
     const first = r === 0;
     await spinTo(idx, first ? cfg.duration : cfg.duration * 0.7, first ? cfg.turns : Math.max(2, cfg.turns - 2));
 
-    const num = wheelNums[idx];
+    const num = wheelItems[idx];
     results.push(num);
     highlight = idx;
     drawWheel();
     ding();
-    addBall($('current'), num);
+    addBall($('current'), num, prize ? r + 1 : 0);
     await sleep(r < k - 1 ? 750 : 400);
 
     highlight = -1;
-    wheelNums.splice(idx, 1);
+    wheelItems.splice(idx, 1);
     snapRotation();
     drawWheel();
   }
 
-  if (state.noRepeat) state.drawn.push(...results);
-  state.history.unshift({ time: Date.now(), nums: results });
+  if (!prize && state.noRepeat) state.drawn.push(...results);
+  state.history.unshift({ time: Date.now(), nums: results, mode: state.mode });
   save();
 
-  $('status').textContent = `完成！抽出 ${k} 個號碼`;
+  $('status').textContent = prize ? `完成！已排出 ${k} 個獎品的順序` : `完成！抽出 ${k} 個號碼`;
   spinning = false;
   setBusy(false);
   refresh();
-  showResult(results);
+  showResult(results, prize);
 }
 
 function setBusy(busy) {
@@ -447,17 +476,31 @@ function setBusy(busy) {
 }
 
 // ---------- UI ----------
-function addBall(container, num) {
+// rank > 0 時為獎品模式：顯示「名次 + 名稱」
+function addBall(container, num, rank = 0) {
   const b = document.createElement('span');
-  b.className = 'ball';
-  b.textContent = num;
+  b.className = rank ? 'ball prize' : 'ball';
+  if (rank) {
+    const r = document.createElement('span');
+    r.className = 'rank';
+    r.textContent = rank;
+    const l = document.createElement('span');
+    l.className = 'label';
+    l.textContent = num;
+    b.append(r, l);
+    b.title = `第 ${rank} 順位：${num}`;
+  } else {
+    b.textContent = num;
+  }
   container.appendChild(b);
 }
 
-function showResult(nums) {
+function showResult(nums, prize = false) {
   const box = $('resultBalls');
   box.innerHTML = '';
-  nums.forEach((n, i) => setTimeout(() => addBall(box, n), i * 90));
+  box.classList.toggle('ranked', prize);
+  $('resultTitle').textContent = prize ? '🎉 獎品順序' : '🎉 抽獎結果';
+  nums.forEach((n, i) => setTimeout(() => addBall(box, n, prize ? i + 1 : 0), i * 90));
   $('resultModal').classList.remove('hidden');
   fanfare();
   confetti();
@@ -516,8 +559,20 @@ function renderChips() {
 }
 
 function renderPoolInfo() {
-  const pool = basePool();
   const info = $('poolInfo');
+  $('poolDetails').classList.toggle('hidden', isPrize());
+  if (isPrize()) {
+    const n = state.prizes.length;
+    const bad = n < 2;
+    info.innerHTML = bad
+      ? `目前 <b>${n}</b> 個獎品<br>⚠ 至少需要 2 個獎品才能排順序`
+      : `共 <b>${n}</b> 個獎品，按「開始」由輪盤依序轉出第 1 ~ ${n} 順位`;
+    info.classList.toggle('error', bad);
+    $('spinBtn').disabled = bad || spinning;
+    return;
+  }
+
+  const pool = basePool();
   const exCount = state.excludes.filter((n) => n <= state.total).length;
   const drawnCount = state.noRepeat ? state.drawn.filter((n) => n <= state.total && !state.excludes.includes(n)).length : 0;
   let html = `可抽號碼 <b>${pool.length}</b> 個（共 ${state.total}，排除 ${exCount}`;
@@ -549,10 +604,15 @@ function renderHistory() {
     const d = new Date(h.time);
     const meta = document.createElement('div');
     meta.className = 'meta';
-    meta.textContent = `第 ${state.history.length - i} 回 · ${d.toLocaleString('zh-TW', { hour12: false })}`;
+    const tag = h.mode === 'prize' ? '🎁 獎品排序' : '🔢 號碼';
+    meta.textContent = `第 ${state.history.length - i} 回 · ${tag} · ${d.toLocaleString('zh-TW', { hour12: false })}`;
     const nums = document.createElement('div');
     nums.className = 'nums';
-    h.nums.forEach((n) => { const s = document.createElement('span'); s.textContent = n; nums.appendChild(s); });
+    h.nums.forEach((n, j) => {
+      const s = document.createElement('span');
+      s.textContent = h.mode === 'prize' ? `${j + 1}. ${n}` : n;
+      nums.appendChild(s);
+    });
     li.append(meta, nums);
     list.appendChild(li);
   });
@@ -568,12 +628,63 @@ function readInputs() {
   state.speed = $('speed').value;
 }
 
+function renderMode() {
+  const prize = isPrize();
+  $('modeNumber').classList.toggle('active', !prize);
+  $('modePrize').classList.toggle('active', prize);
+  $('modeNumber').setAttribute('aria-selected', String(!prize));
+  $('modePrize').setAttribute('aria-selected', String(prize));
+  $('numberSettings').classList.toggle('hidden', prize);
+  $('prizeSettings').classList.toggle('hidden', !prize);
+  document.querySelector('.tape-wrap').style.setProperty('--cell', tapeCell() + 'px');
+}
+
+function renderPrizes() {
+  const list = $('prizeList');
+  list.innerHTML = '';
+  state.prizes.forEach((p, i) => {
+    const li = document.createElement('li');
+    const no = document.createElement('span');
+    no.className = 'no';
+    no.textContent = i + 1;
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = p;
+    const x = document.createElement('button');
+    x.textContent = '×';
+    x.setAttribute('aria-label', `移除獎品 ${p}`);
+    x.onclick = () => { state.prizes.splice(i, 1); save(); refresh(); };
+    li.append(no, name, x);
+    list.appendChild(li);
+  });
+  $('clearPrizes').classList.toggle('hidden', state.prizes.length === 0);
+}
+
+// 一次可加入多個（貼上多行時每行一個）
+function addPrizes(text) {
+  const names = text.split(/\r?\n/).map((s) => s.trim().slice(0, 40)).filter(Boolean);
+  if (!names.length) return false;
+  state.prizes.push(...names);
+  save(); refresh();
+  return true;
+}
+
+function setMode(mode) {
+  if (spinning || state.mode === mode) return;
+  state.mode = mode;
+  $('current').innerHTML = '';
+  $('status').textContent = mode === 'prize' ? '輸入獎品後按「開始」排出順序' : '設定好參數後按「開始」';
+  save(); refresh();
+}
+
 function refresh() {
+  renderMode();
   if (!spinning) {
-    wheelNums = basePool();
+    wheelItems = currentPool();
     snapRotation();
     drawWheel();
   }
+  renderPrizes();
   renderChips();
   renderPoolInfo();
   renderHistory();
@@ -585,6 +696,7 @@ function syncInputs() {
   $('noRepeat').checked = state.noRepeat;
   $('speed').value = state.speed;
   $('soundBtn').textContent = state.sound ? '🔊' : '🔇';
+  if (isPrize()) $('status').textContent = '輸入獎品後按「開始」排出順序';
 }
 
 // ---------- Confetti ----------
@@ -630,6 +742,21 @@ function bind() {
   $('addExclude').onclick = addExcludes;
   $('excludeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addExcludes(); } });
   $('clearExclude').onclick = () => { state.excludes = []; save(); refresh(); };
+
+  $('modeNumber').onclick = () => setMode('number');
+  $('modePrize').onclick = () => setMode('prize');
+  const prizeInput = $('prizeInput');
+  const submitPrize = () => { if (addPrizes(prizeInput.value)) prizeInput.value = ''; prizeInput.focus(); };
+  $('addPrize').onclick = submitPrize;
+  prizeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitPrize(); } });
+  prizeInput.addEventListener('paste', (e) => {
+    const text = (e.clipboardData || window.clipboardData).getData('text');
+    if (/\r?\n/.test(text.trim())) { e.preventDefault(); addPrizes(text); }
+  });
+  $('clearPrizes').onclick = () => {
+    if (!confirm('確定要清除全部獎品？')) return;
+    state.prizes = []; save(); refresh();
+  };
 
   ['total', 'count'].forEach((id) => $(id).addEventListener('input', () => { readInputs(); save(); refresh(); }));
   ['noRepeat', 'speed'].forEach((id) => $(id).addEventListener('change', () => { readInputs(); save(); refresh(); }));
