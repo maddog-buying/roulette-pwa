@@ -188,6 +188,20 @@ function drawWheel() {
     }
   }
 
+  // 邊緣卡榫：每根經過指針時發出「喀」聲
+  const pegs = pegCount(n);
+  const pegR = Math.max(2, size * 0.009);
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = 'rgba(20, 17, 43, .6)';
+  ctx.lineWidth = 1;
+  for (let j = 0; j < pegs; j++) {
+    const a = rotation + (j * TAU) / pegs - Math.PI / 2;
+    ctx.beginPath();
+    ctx.arc(c + Math.cos(a) * (R - pegR - 3), c + Math.sin(a) * (R - pegR - 3), pegR, 0, TAU);
+    ctx.fill();
+    ctx.stroke();
+  }
+
   // 內圈裝飾
   ctx.beginPath();
   ctx.arc(c, c, R * 0.2, 0, TAU);
@@ -209,26 +223,134 @@ function indexAtPointer() {
   return Math.floor(a / s) % n;
 }
 
+// 輪盤邊緣的卡榫數：號碼少時每格一根，號碼多時固定 72 根，避免聲音糊成一片
+const MAX_PEGS = 72;
+const pegCount = (n) => (n <= MAX_PEGS ? n : MAX_PEGS);
+function pegAtPointer() {
+  const pegs = pegCount(wheelNums.length);
+  const a = (((-rotation) % TAU) + TAU) % TAU;
+  return Math.floor(a / (TAU / pegs)) % pegs;
+}
+
 // ---------- Sound ----------
 let audioCtx = null;
+let noiseBuf = null;
+let master = null;
 let lastTick = 0;
-function tick(freq = 1400, dur = 0.03, vol = 0.15) {
+
+// iOS Safari 只允許在點按當下啟動音效，所以在按「開始」時呼叫
+function unlockAudio() {
   if (!state.sound) return;
   try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const t = audioCtx.currentTime;
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = 'square';
-    o.frequency.value = freq;
-    g.gain.setValueAtTime(vol, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(audioCtx.destination);
-    o.start(t); o.stop(t + dur);
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      master = audioCtx.createGain();
+      master.gain.value = 0.9;
+      master.connect(audioCtx.destination);
+      noiseBuf = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (audioCtx.state !== 'running') audioCtx.resume();
+    // 播一段無聲音訊，讓 iOS 正式解鎖
+    const b = audioCtx.createBufferSource();
+    b.buffer = audioCtx.createBuffer(1, 1, 22050);
+    b.connect(master); b.start(0);
   } catch (_) {}
 }
+// resume() 是非同步的，尚未 running 時排進去的聲音會在解鎖後播出
+const audioReady = () => state.sound && !!audioCtx && audioCtx.state !== 'closed';
+
+// 卡榫撞到指針的「喀」：短促的雜訊 + 低頻撞擊，速度越快越清脆
+function clack(speed = 1) {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  const src = audioCtx.createBufferSource();
+  src.buffer = noiseBuf;
+  const bp = audioCtx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 1800 + speed * 1600;
+  bp.Q.value = 2.5;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.55, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.035);
+  src.connect(bp).connect(g).connect(master);
+  src.start(t, Math.random() * 0.5, 0.05);
+
+  const o = audioCtx.createOscillator();
+  const og = audioCtx.createGain();
+  o.type = 'triangle';
+  o.frequency.setValueAtTime(420 + speed * 180, t);
+  o.frequency.exponentialRampToValueAtTime(140, t + 0.04);
+  og.gain.setValueAtTime(0.35, t);
+  og.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+  o.connect(og).connect(master);
+  o.start(t); o.stop(t + 0.06);
+}
+
+// 轉動時的風切聲，音量與音高跟著轉速變化
+let whoosh = null;
+function whooshStart() {
+  if (!audioReady()) return;
+  const src = audioCtx.createBufferSource();
+  src.buffer = noiseBuf;
+  src.loop = true;
+  const lp = audioCtx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 900;
+  const g = audioCtx.createGain();
+  g.gain.value = 0;
+  src.connect(lp).connect(g).connect(master);
+  src.start();
+  whoosh = { src, lp, g };
+}
+function whooshUpdate(speed) {
+  if (!whoosh) return;
+  const t = audioCtx.currentTime;
+  whoosh.g.gain.setTargetAtTime(0.16 * speed, t, 0.05);
+  whoosh.lp.frequency.setTargetAtTime(250 + speed * 1300, t, 0.05);
+}
+function whooshStop() {
+  if (!whoosh) return;
+  const w = whoosh;
+  whoosh = null;
+  w.g.gain.setTargetAtTime(0, audioCtx.currentTime, 0.08);
+  setTimeout(() => { try { w.src.stop(); } catch (_) {} }, 500);
+}
+
+function tone(freq, dur, vol = 0.12, type = 'sine') {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(master);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+// 停下來中獎的「叮～」
+function ding() {
+  tone(1319, 0.5, 0.18);
+  tone(1976, 0.4, 0.07);
+}
 function fanfare() {
-  [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tick(f, 0.18, 0.12), i * 110));
+  [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.25, 0.14, 'triangle'), i * 110));
+}
+
+// 指針被卡榫撥動的小動畫，和「喀」聲同步
+const pointerEl = document.querySelector('.pointer');
+let flickTimer = 0;
+function flickPointer(speed) {
+  pointerEl.style.transition = 'none';
+  pointerEl.style.transform = `translateX(-50%) rotate(${-8 - speed * 10}deg)`;
+  clearTimeout(flickTimer);
+  flickTimer = setTimeout(() => {
+    pointerEl.style.transition = 'transform .12s ease-out';
+    pointerEl.style.transform = 'translateX(-50%)';
+  }, 30);
 }
 
 // ---------- Spin ----------
@@ -245,20 +367,23 @@ function spinTo(index, duration, turns) {
     const delta = ((desired - cur) % TAU + TAU) % TAU;
     const target = start + delta + turns * TAU;
     const t0 = performance.now();
-    let lastIdx = indexAtPointer();
+    let lastPeg = pegAtPointer();
     animating = true;
+    whooshStart();
 
     function frame(now) {
       const t = Math.min(1, (now - t0) / duration);
       rotation = start + (target - start) * easeOut(t);
       drawWheel();
-      const idx = indexAtPointer();
-      if (idx !== lastIdx) {
-        lastIdx = idx;
-        if (now - lastTick > 35) { tick(); lastTick = now; }
+      const speed = Math.pow(1 - t, 3); // 相對轉速 1 → 0（easeOut 的導數）
+      whooshUpdate(speed);
+      const peg = pegAtPointer();
+      if (peg !== lastPeg) {
+        lastPeg = peg;
+        if (now - lastTick > 28) { clack(speed); flickPointer(speed); lastTick = now; }
       }
       if (t < 1) requestAnimationFrame(frame);
-      else { animating = false; drawWheel(); resolve(); }
+      else { animating = false; whooshStop(); drawWheel(); resolve(); }
     }
     requestAnimationFrame(frame);
   });
@@ -275,6 +400,7 @@ async function startDraw() {
   const k = state.count;
   if (pool.length < k || k < 1) { renderPoolInfo(); return; }
 
+  unlockAudio();
   spinning = true;
   setBusy(true);
   $('current').innerHTML = '';
@@ -294,7 +420,7 @@ async function startDraw() {
     results.push(num);
     highlight = idx;
     drawWheel();
-    tick(880, 0.2, 0.12);
+    ding();
     addBall($('current'), num);
     await sleep(r < k - 1 ? 750 : 400);
 
@@ -517,7 +643,11 @@ function bind() {
     save(); refresh();
   };
 
-  $('soundBtn').onclick = () => { state.sound = !state.sound; syncInputs(); save(); };
+  $('soundBtn').onclick = () => {
+    state.sound = !state.sound;
+    if (state.sound) { unlockAudio(); clack(0.6); } else whooshStop();
+    syncInputs(); save();
+  };
 
   const closeModal = () => $('resultModal').classList.add('hidden');
   $('closeModal').onclick = closeModal;
